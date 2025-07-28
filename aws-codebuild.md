@@ -82,4 +82,33 @@ STEP2: Creating Code pipe line with Code build
 
 10. Runtime env [text](https://docs.aws.amazon.com/codebuild/latest/userguide/available-runtimes.html)
 
-11. 
+11. Select Deployment provider (S3 Bucket in this case)
+![alt text](image-19.png)
+
+12. Select checkbox extract before deployment
+![alt text](image-20.png)
+
+13. buildspec:
+version: 0.2  # Specifies the BuildSpec schema version—must be 0.2 for this structure
+
+phases:
+  install:  # 🧰 Phase 1: Install essential tools and define environment
+    runtime-versions:
+      nodejs: 20  # ⚙️ Set the Node.js runtime to v20 for building the project
+    commands:
+      - npm install -g @angular/cli@17  # 🚀 Install Angular CLI globally, version 17
+
+  pre_build:  # 🔧 Phase 2: Prepare project before actual build starts
+    commands:
+      - npm install  # 📦 Install all dependencies from package.json using npm
+
+  build:  # 🏗️ Phase 3: Compile and package your app
+    commands:
+      - ng build -c production  # 🔨 Use Angular CLI to build the app in production mode
+
+artifacts:
+  base-directory: dist/my-angular-project  # 📁 Folder where the Angular build outputs are stored
+  files:
+    - '**/*'  # 📦 Include all files recursively within base-directory for deployment or download
+ 
+ 14: 
