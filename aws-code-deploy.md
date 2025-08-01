@@ -159,11 +159,6 @@
 - (Optional) Enable **Auto-assign Public IP** (if you want to access your website from internet)
 - Give Security group name  **web-server-security-group**
 - ![alt text](image-26.png)
-- let inbound security group be with default settings
--![alt text](image-27.png)
-- Choose your **IAM role** if one exists (e.g., `CodeDeployEC2Role`)
--![alt text](image-29.png)
-
 ---
 
 ## 🔒 Step 6: Configure Security Group
@@ -173,7 +168,7 @@
   - **SSH (port 22)** for Linux
   - **RDP (port 3389)** for Windows
   - **HTTP (port 80)** for web servers
-- Let Rule 1 be default
+- Let Security Group Rule 1 be default
 - Click on add new **Add Security Rules** to add Security group rule 2
 - ![alt text](image-28.png)
 - In additional settings attach the IAM role which was created previously
@@ -181,14 +176,14 @@
 
 ---
 
-## 📁 Step 6: Add Storage
+## 📁 Step 6: Add Storage (Optional)
 
 - Default volume size is based on AMI (~8 GiB)
 - You can adjust volume type and size as needed
 
 ---
 
-## 🏷️ Step 7: Add Tags
+## 🏷️ Step 7: Add Tags (Optional)
 
 - Tags help with organization and billing
 - Example:
@@ -211,81 +206,290 @@
 
 - Go to **Instances → Running Instances**
 - Select your instance
-- Click **Connect** to connect to browser based SSH cliet/terminal
+- Click **Connect** to connect to browser based SSH client/terminal
 -![alt text](image-33.png)
 - Click on **Connect** again
 -![alt text](image-34.png)
 - You will get browser based terminal
 -![alt text](image-35.png)
--- **Code Deploy Installtion**
+- **Code Deploy Agent and Nginx Installation**
+```# Installing CodeDeploy Agent
+sudo yum update -y
+sudo yum install -y ruby wget
+wget https://aws-codedeploy-eu-west-1.s3.eu-west-1.amazonaws.com/latest/install
+chmod +x ./install
+sudo ./install auto
+
+# Checking CodeDeploy Agent status
+sudo service codedeploy-agent status
+
+# Installing Nginx
+sudo amazon-linux-extras install -y nginx1
+
+# Checking Nginx status
+sudo service nginx status
+
+# Starting Nginx
+sudo service nginx start
+
+# Enabling Nginx to restart on system reboot
+sudo chkconfig nginx on
+
+# Creating folders for deployments
+sudo mkdir -p /var/www/my-angular-project
+
+# Changing Nginx configuration
+sudo nano /etc/nginx/nginx.conf
+
+# Only change root to /var/www/my-angular-project
+# Press `Ctrl + X` to exit, press `Y` to save and press `Enter` to approve.
+
+# Restart Nginx
+sudo service nginx restart
 ```
-# 🚀 AWS CodeDeploy Agent Installation Steps for Amazon Linux 2 (AMI 2)
 
-# 🖥️ Step 1: Update system and install required packages
-sudo yum update -y                          # Update all system packages
-sudo yum install -y ruby wget               # Install Ruby and wget (required for agent installer)
+# 🚀 Create AWS CodeDeploy Deployment Group for Tagged EC2 Instances
 
-# 🌐 Step 2: Download and install CodeDeploy agent
-cd /home/ec2-user                           # Navigate to home directory
-wget https://aws-codedeploy-ap-south-1.s3.ap-south-1.amazonaws.com/latest/install  # Download installer (replace region if needed)
-chmod +x ./install                          # Make installer executable
-sudo ./install auto                         # Run installer in automatic mode
+## ✅ Prerequisites
+- EC2 instances must be running and **tagged** (e.g., `Environment=Staging`)
+- **CodeDeploy agent** must be installed and running on EC2
+- Required **IAM roles**:
+  - Service role for CodeDeploy (e.g., `CodeDeployServiceRole`)
+  - Instance profile role attached to EC2
+    #### 🧭 Step-by-Step
 
-# ✅ Step 3: Verify agent status using both methods
-echo "🔍 Checking CodeDeploy Agent status via systemctl:"
-sudo systemctl status codedeploy-agent      # Preferred method (systemd)
+    1. Go to [IAM Console](https://console.aws.amazon.com/iam/)
+    2. Click **Roles → Create Role**
+    3. Select:
+    - **Trusted Entity**: AWS Service
+    - **Use Case**: CodeDeploy
+    - ![alt text](image-39.png)
+    - ![alt text](image-40.png) (add permission)
+    4. Give Role Name **CodeDeployEC2ServiceRole** and click on create role
+    - ![alt text](image-41.png)
+    - ## 🔐 IAM Service Role Trust Policy (CodeDeploy)
 
-echo "🔍 Checking CodeDeploy Agent status via service:"
-sudo service codedeploy-agent status        # Legacy-compatible method
+    -   ```json
+        {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+            "Effect": "Allow",
+            "Principal": {
+                "Service": [
+                "codedeploy.amazonaws.com"
+                ]
+            },
+            "Action": [
+                "sts:AssumeRole"
+            ]
+            }
+        ]
+        }
+        ```
+    5. Go to Add Permissions and select click add inline policy
+    - ![alt text](image-42.png)
+    6. In create policy screen switch to JSON
+    - ![alt text](image-43.png)
+    7. ```json
+        {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+            "Sid": "Statement1",
+            "Effect": "Allow",
+            "Action": [
+                "ec2:RunInstances",
+                "ec2:CreateTags",
+                "iam:PassRole"
+            ],
+            "Resource": "*"
+            }
+        ]
+        }
+        ```
+    8. # 🧠 Policy Explanation
 
-# 🔄 Optional: Start or restart agent manually
-sudo systemctl start codedeploy-agent       # Start agent if not running
-sudo systemctl restart codedeploy-agent     # Restart agent if needed
+        ## 🔧 Version
 
-# 🛠️ Troubleshooting: View agent logs
-cat /var/log/codedeploy-agent/codedeploy-agent.log  # Check logs for errors or status messages
+        Indicates the policy language version.  
+        **"2012-10-17"** is the latest stable version used across most IAM policies.
 
-# 🔄 Optional: Update CodeDeploy agent
-sudo yum upgrade -y codedeploy-agent        # Upgrade to latest version if available
-```
-- **Installing Nginx Server**
-```
-# 🌐 NGINX Installation Steps for Amazon Linux 2 (AMI 2)
-# Includes both modern (systemctl) and legacy-compatible (service) commands
+        ---
 
-# 🖥️ Step 1: Update system packages
-sudo yum update -y                          # Refresh system packages to latest
+        ## 🔧 Effect
 
-# 📦 Step 2: Install NGINX using amazon-linux-extras (two approaches)
+        **"Allow"** grants permission for the actions listed under **Action**.
 
-# ✅ Recommended Method: Enable repo and install via yum
-sudo amazon-linux-extras enable nginx1      # Activate nginx repository
-sudo yum install -y nginx                   # Install the nginx package
+        ---
 
-# 🧩 Optional Method: Direct install via amazon-linux-extras (more compact)
-# This combines enabling and installing in one step
-# Uncomment the line below if you prefer this style:
-# sudo amazon-linux-extras install -y nginx1
+        ## 🔧 Sid
 
-# 🌐 Step 3: Start and enable NGINX service (modern method)
-sudo systemctl start nginx                  # Start nginx using systemd
-sudo systemctl enable nginx                 # Enable nginx to launch on boot
+        Optional identifier for the statement, useful for tracking and auditing.
 
-# 🔄 Step 4: Start and enable NGINX using legacy-compatible service commands
-sudo service nginx start                    # Start nginx service using SysVinit wrapper
-sudo chkconfig nginx on                     # Enable nginx to start on boot (legacy equivalent)
+        ---
 
-# 🔍 Step 5: Check NGINX service status using both methods
+        ## 🔧 Action
 
-echo "🔍 NGINX status via systemctl:"
-sudo systemctl status nginx                 # Preferred detailed service info (systemd)
+        List of permissions being granted:
 
-echo "🔍 NGINX status via service (legacy):"
-sudo service nginx status                   # Lightweight compatibility check
+        | Action            | Purpose                                                                  |
+        |-------------------|--------------------------------------------------------------------------|
+        | `ec2:RunInstances`| Allows launching EC2 instances (used in Blue/Green deployments, etc.)    |
+        | `ec2:CreateTags`  | Enables tagging of instances or resources for identification             |
+        | `iam:PassRole`    | Lets CodeDeploy assign IAM roles to EC2 instances                        |
 
-# 📌 Notes:
-# - Ensure your EC2 security group allows inbound traffic on port 80 (HTTP)
-# - Web root directory: /usr/share/nginx/html
-# - Config file path: /etc/nginx/nginx.conf
+    10. Review and Create
+        - ![alt text](image-44.png)
+        - give name **CodeDeployBlueGreenPolicy**
+    11. IAM Policy is created
+        - ![alt text](image-45.png)
+
+---
+
+## 📦 Step 1: Create a CodeDeploy Application
+
+1. Open **AWS Console → CodeDeploy**
+2. Click **Create Application**
+3. Enter:
+   - **Application Name**: `MyAngularApp`
+   - **Compute Platform**: `EC2/On-Premises`
+4. Click **Create Application**
+   -![alt text](image-38.png)
+---
+
+## 🧩 Step 2: Create Deployment Group
+
+1. In your application dashboard, click **Create Deployment Group**
+2. Enter:
+   - **Deployment Group Name**: `StagingGroup`
+   - **Service Role**: Select IAM role (`CodeDeployServiceRole`)
+   - **Deployment Type**:
+     - `In-place`
+     - OR `Blue/Green` for zero-downtime deployments
+     - We will select `In-place` for this example
+     -![alt text](image-46.png)
+
+---
+
+## 🏷️ Step 3: Target EC2 by Tag
+
+1. Under **Environment Configuration**, choose:
+   - **Amazon EC2 instances**
+2. Scroll to **Tag Group 1** and enter (Same as Tags of EC2 instance):
+   - **Key**: `Application`
+   - **Value**: `MyAngularProject`
+   - ![alt text](image-47.png)
+   - **Note** : we can add multiple Tag groups linking to multiple EC2 instances like dev, QA, Prod etc.
+3. AWS will match instances with the tag automatically
+
+---
+
+## ⚙️ Step 4: Configure Deployment Settings
+
+- Choose a **Deployment Configuration**:
+  - `CodeDeployDefault.AllAtOnce`
+  - `CodeDeployDefault.OneAtATime`
+  - `CodeDeployDefault.HalfAtATime`
+- (Optional) Configure:
+  - **Load balancer**
+  - **Alarms and rollback settings**
+- Select `CodeDeployDefault.AllAtOnce` and disable Load balancer for this example
+  - ![alt text](image-48.png)
+---
+
+## 📬 Step 5: Finalize Deployment Group
+
+1. Review all details
+2. Click **Create Deployment Group**
+3. Deployment group will be ready for use in pipelines or manual deployments
+
+---
+
+# Replacing S3 bucket with EC2 / Adding Code Deploy action to Code Pipeline
+
+## Step 1: Edit the existing pipeline
+  - ![alt text](image-49.png)
+  - **Edit Stage**  button
+  - ![alt text](image-50.png)
+  - Remove existing s3 bucket and add new deployment group
+  - ![alt text](image-51.png)
+
+## Step 2: Appspec file
+   - # 🔄 AWS CodeDeploy AppSpec Lifecycle Hooks
+
+   - ### 📦 What Is `appspec.yml`?
+        `appspec.yml` is a deployment manifest used by AWS CodeDeploy to orchestrate how your application is installed, validated, and managed on target EC2 instances or Lambda environments.
+---
+
+   - ### 🔁 Lifecycle Hook Phases (For EC2/On-Premises Deployments)
+
+        Each phase represents a checkpoint in the deployment flow. You can attach scripts at any stage to customize behavior.
+
+| Phase                | Purpose                                                                 | Common Use Cases                     |
+|---------------------|-------------------------------------------------------------------------|--------------------------------------|
+| **BeforeInstall**    | Runs before application files are copied.                              | Stop services, backup files          |
+| **AfterInstall**     | Runs after files are copied.                                            | Set permissions, update configs      |
+| **ApplicationStart** | Runs once your app is installed.                                        | Start services, launch containers    |
+| **ValidateService**  | Final verification to ensure deployment succeeded.                      | Health checks, endpoint tests        |
+
+---
+
+    - # 📦 AppSpec File Explanation (AWS CodeDeploy)
+
+```yaml
+version: 0.0          # Defines the AppSpec file version.
+os: linux             # Specifies that the target OS is Linux.
+
+files:                # 📁 File Deployment Settings
+  - source: dist/my-angular-project          # Source directory from your package/archive.
+    destination: /var/www/my-angular-project # Target location on the EC2 instance.
+
+permissions:          # 🔒 Post-deployment file permissions
+  - object: /var/www/my-angular-project      # Path to apply permissions.
+    pattern: '**'                            # Recursively apply to all files and folders.
+    mode: '0755'                             # Read/write/execute for owner; read/execute for group & others.
+    owner: root                              # Sets the file owner.
+    group: root                              # Sets the file group.
+    type:                                    # Applies changes to both files and directories.
+      - file
+      - directory
+
+hooks:                # ⚙️ Lifecycle Hooks
+  ApplicationStart:                         # Triggered after files are installed.
+    - location: deploy-scripts/application-start-hook.sh # Runs the specified shell script.
+      timeout: 300                                      # Script must complete within 5 minutes.
 ```
 ---
+## Step 3: Changes in BuildSpec file
+   - ![alt text](image-55.png)
+   - Change the artifacts in buildspec file
+   - ![alt text](image-56.png)
+``` version: 0.2
+phases:
+  install:
+    runtime-versions:
+      nodejs: 20
+    commands:
+      - npm install -g @angular/cli@17
+  pre_build:
+    commands:
+      - npm install
+  build:
+    commands:
+      - ng build -c production
+    finally:
+      - echo 'This is the finally block execution!'
+artifacts:
+  files:
+    - 'dist/my-angular-project/**/*'
+    - appspec.yml
+    - 'deploy-scripts/**/*'
+```
+---
+   - ![alt text](image-52.png)
+   - ![alt text](image-53.png)
+   - copy this link and paste it on browser to open ours app
+
+   - ![alt text](image-54.png) 
+
